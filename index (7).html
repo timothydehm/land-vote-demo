@@ -1,0 +1,710 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Public Land Voting Tool (demo)</title>
+<meta name="description" content="Demo: one shared record of what the CDC, the councilperson, the City's neighborhood staff and residents want for each of Cleveland's land bank lots.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='4' y='4' width='11' height='11' fill='%2300875F'/%3E%3Crect x='17' y='4' width='11' height='11' fill='%230068A6'/%3E%3Crect x='4' y='17' width='11' height='11' fill='%23E6A200'/%3E%3Crect x='17' y='17' width='11' height='11' fill='%23C9C7C2'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+<link rel="preconnect" href="https://server.arcgisonline.com" crossorigin>
+<link rel="preconnect" href="https://tiles.openfreemap.org" crossorigin>
+<link rel="preconnect" href="https://services3.arcgis.com" crossorigin>
+<style>
+:root{
+  --ink:#1D1A26; --muted:#67646C; --line:#DCDAD6; --mist:#F3F2F0; --paper:#FFFFFF;
+  --danger:#9E2F2A;
+  --font:"Public Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --r-card:16px; --r-ctl:11px;
+  --shadow:0 1px 2px rgba(29,26,38,.07), 0 10px 30px rgba(29,26,38,.11);
+}
+*,*::before,*::after{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{background:var(--mist);color:var(--ink);font-family:var(--font);font-size:16px;line-height:1.45;-webkit-font-smoothing:antialiased;overflow:hidden}
+button,input{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2.5px solid var(--ink);outline-offset:2px;border-radius:6px}
+[hidden]{display:none!important}
+.muted{color:var(--muted)}
+.sw{width:11px;height:11px;border-radius:3px;display:inline-block;flex:none;background:var(--c)}
+.sw.h{background:repeating-linear-gradient(135deg,var(--c) 0 2px,transparent 2px 5px)!important;box-shadow:inset 0 0 0 1.5px var(--c)}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:.45em;min-height:44px;padding:0 16px;border-radius:var(--r-ctl);
+  border:1.5px solid var(--line);background:var(--paper);font-weight:600;font-size:15px;white-space:nowrap;color:var(--ink)}
+.btn:hover{border-color:#bbb8b2}
+.btn-dark{background:var(--ink);border-color:var(--ink);color:#fff}
+.btn-dark:hover{border-color:var(--ink)}
+.btn-sm{min-height:38px;font-size:14px;padding:0 12px}
+.btn-warn{border-color:var(--danger);color:var(--danger)}
+
+/* ---------- the map ---------- */
+#map{position:fixed;inset:0;background:#fff}
+.maplibregl-ctrl-attrib{font-size:10.5px}
+.dock{position:fixed;z-index:10;left:0;right:0;bottom:0;padding:0 10px calc(env(safe-area-inset-bottom,0px) + 10px);
+  display:flex;flex-direction:column;align-items:center;gap:8px;pointer-events:none}
+.dock>*{pointer-events:auto;width:100%;max-width:440px}
+
+/* the tray: who's voting, then the three choices */
+.vbar{display:flex;align-items:center;gap:6px;background:var(--paper);border-radius:18px;box-shadow:var(--shadow);padding:7px}
+.sq{flex:1 1 0;min-width:0;height:52px;border:0;border-radius:12px;background:var(--c);color:#fff;font-size:13.5px;font-weight:650;line-height:1.1;
+  display:grid;place-items:center;padding:0 4px;text-align:center;position:relative;text-shadow:0 1px 1px rgba(0,0,0,.2);
+  opacity:.4;filter:saturate(.75);transition:opacity .18s,filter .18s,transform .15s,box-shadow .15s;-webkit-tap-highlight-color:transparent;
+  -webkit-user-select:none;user-select:none;touch-action:manipulation}
+.vbar.lit .sq{opacity:1;filter:none}
+.vbar.lit .sq:active{transform:scale(.95)}
+.vbar.lit .sq.cur{box-shadow:0 0 0 2.5px var(--paper),0 0 0 5px var(--ink);transform:translateY(-1px)}
+.sq.cur::after{content:"";position:absolute;top:6px;right:7px;width:7px;height:7px;border-radius:50%;background:#fff}
+.whob{display:flex;align-items:center;gap:8px;width:100%;border:0;background:var(--mist);border-radius:11px;min-height:40px;padding:0 10px 0 12px;
+  font-size:14px;text-align:left;color:var(--muted)}
+.whob b{color:var(--ink);font-weight:650;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.whob svg{width:18px;height:18px;flex:none;color:var(--ink)}
+.whob:hover{background:#ebe9e5}
+.whob.unset b{font-weight:600}
+.tray{background:var(--paper);border-radius:18px;box-shadow:var(--shadow);padding:7px;display:grid;grid-template-columns:minmax(0,1fr);gap:7px}
+.tray .vbar{box-shadow:none;padding:0;border-radius:0}
+@media (max-width:420px){.sq{font-size:12.5px;padding:0 2px}}
+
+/* the open lot: a strip above the tray on phones, a panel on wide screens */
+.card{background:var(--paper);border-radius:var(--r-card);box-shadow:var(--shadow);padding:11px 12px 12px 14px;
+  max-height:min(56dvh, calc(100dvh - 240px));overflow:auto;overscroll-behavior:contain}
+.card.in{animation:cardIn .2s ease-out}
+@keyframes cardIn{from{transform:translateY(14px);opacity:0}to{transform:none;opacity:1}}
+.ch{display:flex;align-items:flex-start;gap:10px}
+.ct{flex:1;min-width:0}
+.ct b{display:block;font-size:16.5px;line-height:1.25;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ct .pin{font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums}
+.nx{flex:none;width:40px;height:40px;border:0;border-radius:12px;background:var(--mist);display:grid;place-items:center;color:var(--ink)}
+.nx:hover{background:#e8e6e2}
+.nx svg{width:20px;height:20px}
+.lead{margin-top:10px;font-size:15px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.lead b{font-weight:650}
+.lead .sw{width:13px;height:13px}
+.lead.none{color:#8d8992;font-size:14px}
+/* everyone's votes on the lot as one bar, a segment per vote */
+.stack{display:flex;gap:2px;height:8px;margin-top:8px}
+.stack i{flex:1;background:var(--c);border-radius:2px}
+.sec{margin-top:12px;padding-top:9px;border-top:1px solid var(--mist)}
+.sec h3{margin:0 0 5px;font-size:12.5px;font-weight:600;color:var(--muted);display:flex;justify-content:space-between}
+.sec h3 span{font-weight:500;font-variant-numeric:tabular-nums}
+.who{list-style:none;margin:0 -6px;padding:0;display:grid;gap:1px}
+.who li{display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:14px;padding:4px 6px;border-radius:8px}
+.who li.me{background:var(--mist)}
+.who .pick{display:inline-flex;align-items:center;gap:6px;font-weight:600;white-space:nowrap}
+.who .pick.none{color:#a19da6;font-weight:400}
+.res{display:flex;flex-wrap:wrap;gap:5px}
+.rc{display:inline-flex;align-items:center;gap:6px;font-size:13.5px;padding:3px 9px 3px 7px;border-radius:999px;background:var(--mist)}
+.rc.me{box-shadow:inset 0 0 0 1.5px var(--ink)}
+.rc .sw{border-radius:50%;width:10px;height:10px}
+.rsum{font-size:12.5px;color:var(--muted);margin-top:6px}
+.empty{font-size:13.5px;color:#a19da6}
+.cx{border-top:1px solid var(--mist);margin-top:11px;padding-top:7px;font-size:13.5px}
+.cx summary{cursor:pointer;font-size:12.5px;font-weight:600;color:var(--muted);padding:3px 0}
+dl.city{display:grid;grid-template-columns:minmax(110px,42%) 1fr;gap:4px 10px;margin:6px 0 0;font-size:13px}
+dl.city dt{color:var(--muted)}
+dl.city dd{margin:0;word-break:break-word}
+dl.city dd.blank{color:#a19da6;font-style:italic}
+@media (min-width:900px){
+  .card{position:fixed;left:20px;top:76px;width:376px;max-height:calc(100dvh - 96px)}
+  .card.in{animation-name:cardInSide}
+  .maplibregl-ctrl-top-left{top:auto;bottom:0}
+}
+@keyframes cardInSide{from{transform:translateX(-12px);opacity:0}to{transform:none;opacity:1}}
+
+/* who's voting */
+.sheet{background:var(--paper);border-radius:var(--r-card);box-shadow:var(--shadow);padding:14px;font-size:14.5px;
+  max-height:calc(100dvh - 120px);overflow:auto;animation:cardIn .16s ease-out}
+.sheet .wh{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:10px}
+.sheet .wh p{margin:2px 0 0;line-height:1.35}
+.sheet .wh b{font-size:16.5px}
+.sheet h4{margin:0 0 6px;font-size:12.5px;font-weight:600;color:var(--muted)}
+.roles{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.role{min-height:48px;border:1.5px solid var(--line);background:var(--paper);border-radius:var(--r-ctl);padding:6px 10px;text-align:left;font-size:14px;font-weight:600;line-height:1.2}
+.role:hover{border-color:#bbb8b2}
+.role[aria-pressed="true"]{background:var(--ink);border-color:var(--ink);color:#fff}
+.rform{margin-top:14px}
+.rrow{display:flex;gap:6px;align-items:center}
+.rrow input{flex:1;min-width:0;min-height:40px;border:1.5px solid var(--line);border-radius:10px;padding:0 10px;font-size:15px;background:var(--paper)}
+.rrow input:focus{outline:none;border-color:var(--ink)}
+.recent{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.chip{border:1.5px solid var(--line);background:var(--paper);border-radius:999px;min-height:34px;padding:0 12px;font-size:13.5px;font-weight:550}
+.chip:hover{border-color:#bbb8b2}
+.chip[aria-pressed="true"]{background:var(--ink);border-color:var(--ink);color:#fff}
+.msg{font-size:12.5px;color:var(--danger);margin-top:6px}
+.msg:empty{display:none}
+
+/* the top bar */
+.tbar{position:fixed;z-index:20;left:0;right:0;top:0;padding-top:env(safe-area-inset-top,0px);background:var(--paper);border-bottom:1px solid #E4E2DD}
+.tbar .row{height:56px;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:0 6px 0 16px}
+.tname{font-size:16px;font-weight:700;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tname span{font-weight:500;color:var(--muted);margin-left:6px}
+.tb{flex:none;height:44px;border:0;border-radius:11px;background:transparent;display:inline-flex;align-items:center;gap:7px;padding:0 10px;color:var(--ink);font-size:14.5px;font-weight:600}
+.tb:hover{background:var(--mist)}
+.tb[aria-expanded="true"]{background:var(--ink);color:#fff}
+.tb svg{width:22px;height:22px}
+@media (max-width:520px){.tb .tl{display:none}.tname span{display:none}}
+
+.zhint{position:fixed;z-index:11;left:50%;bottom:calc(var(--dock-h,140px) + 14px);transform:translate(-50%,6px);background:rgba(29,26,38,.86);color:#fff;
+  border-radius:999px;padding:8px 14px;font-size:14px;font-weight:600;white-space:nowrap;opacity:0;pointer-events:none;transition:opacity .2s,transform .2s}
+.zhint.show{opacity:1;transform:translate(-50%,0)}
+.toast{position:fixed;z-index:800;left:50%;transform:translate(-50%,10px);opacity:0;pointer-events:none;max-width:min(420px,calc(100% - 24px));width:max-content;
+  background:var(--danger);color:#fff;border-radius:12px;padding:11px 16px;font-size:14.5px;line-height:1.3;box-shadow:0 8px 24px rgba(29,26,38,.25);
+  transition:opacity .18s,transform .18s;top:calc(env(safe-area-inset-top,0px) + 68px)}
+.toast.show{opacity:1;transform:translate(-50%,0)}
+
+/* How this works: a card under the bar, the map still showing around it */
+.page{position:fixed;z-index:22;left:8px;right:8px;top:calc(env(safe-area-inset-top,0px) + 64px);
+  max-height:calc(100dvh - env(safe-area-inset-top,0px) - 64px - var(--dock-h,140px) - 22px);overflow:auto;overscroll-behavior:contain;
+  background:var(--paper);border-radius:var(--r-card);box-shadow:var(--shadow);animation:popIn .16s ease-out;padding:0 18px 18px}
+@keyframes popIn{from{transform:translateY(-8px);opacity:0}to{transform:none;opacity:1}}
+.page .top{display:flex;align-items:center;justify-content:space-between;gap:10px;position:sticky;top:0;z-index:1;background:var(--paper);padding:14px 0 8px}
+.page h1{font-size:19px;letter-spacing:-.01em;margin:0;line-height:1.25}
+.page h2{font-size:15px;margin:18px 0 6px}
+.page p{margin:0 0 10px;font-size:14.5px;line-height:1.5}
+.page .nx{width:36px;height:36px;border-radius:10px}
+/* before and after, in the diagram's terms */
+.paths{display:grid;grid-template-columns:auto 1fr;gap:6px 12px;margin:4px 0 12px;font-size:13.5px;align-items:baseline}
+.paths dt{font-weight:650;color:#3D348B}
+.paths dd{margin:0;color:var(--muted)}
+.key{list-style:none;margin:0;padding:0;display:grid;gap:7px;font-size:14px}
+.key li{display:flex;align-items:center;gap:10px}
+.key .sws{display:flex;gap:3px}
+.key .sw{width:14px;height:14px}
+.page .acts{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:4px}
+.page .small{font-size:13px;color:var(--muted)}
+@media (min-width:900px){.page{left:auto;right:12px;width:420px;max-height:calc(100dvh - 76px)}}
+.boot{position:fixed;inset:0;display:grid;place-items:center;padding:24px;text-align:center;color:var(--muted);z-index:60;background:var(--mist)}
+.boot b{display:block;color:var(--ink);font-size:17px;margin-bottom:6px}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+<div id="map" aria-label="Map of the city's land bank lots"></div>
+<header class="tbar" data-tbar hidden>
+  <div class="row">
+    <div class="tname">Public Land Voting Tool<span>Demo</span></div>
+    <button class="tb" data-about aria-expanded="false" aria-label="How this works"><span data-icon="about"></span><span class="tl">How this works</span></button>
+  </div>
+</header>
+<div class="zhint" data-zhint role="status"></div>
+<div class="dock" data-dock hidden>
+  <section class="card" data-card hidden aria-label="Selected lot"></section>
+  <div class="sheet" data-sheet hidden role="dialog" aria-label="Who's voting"></div>
+  <div class="tray">
+    <button class="whob" data-who></button>
+    <nav class="vbar" data-bar aria-label="Vote"></nav>
+  </div>
+</div>
+<section class="page" data-page role="dialog" aria-label="How this works" hidden></section>
+<div class="boot" data-boot><div><b>Public Land Voting Tool</b><span data-boot-msg>Loading the city's lots…</span></div></div>
+<div class="toast" id="toast" role="alert" aria-live="assertive"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script>
+"use strict";
+/* =====================================================================
+   Public Land Voting Tool: stakeholder demo
+
+   One map of the City of Cleveland's land bank lots, loaded live from the
+   city's layer. Tap a lot to see the city's record for it and what each
+   stakeholder wants: the CDC, the councilperson, the neighborhood planner,
+   the neighborhood investment manager (one seat each), and residents (by
+   name). Anyone can switch who's voting and pick open space, development
+   or yard expansion. Tap your current choice again to take it back.
+
+   Each person counts once. On the map, a lot's color is the leading use:
+   solid when everyone who weighed in agrees, hatched when they don't, grey
+   when tied. Votes are kept in this browser only (localStorage); nothing
+   is sent anywhere. For demonstration only.
+   ===================================================================== */
+const CONFIG = {
+  parcelsUrl: "https://services3.arcgis.com/dty2kHktVXHrqO8i/arcgis/rest/services/City_Landbank/FeatureServer/0",
+  idField: "parcelpin", addressField: "par_addr_all",
+  imagery: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+  imageryAttribution: "Imagery &copy; Esri, Maxar, Earthstar Geographics",
+  imageryOpacity: 0.5,
+  labels: "https://tiles.openfreemap.org/styles/positron",
+  selectZoom: 15
+};
+const CHOICES = [
+  { key: "open_space", label: "Open space", color: "#00875F" },
+  { key: "development", label: "Development", color: "#0068A6" },
+  { key: "yard_expansion", label: "Yard expansion", color: "#E6A200" }
+];
+const TIE = { key: "tie", label: "Tied", color: "#8A8781" };
+const CK = Object.fromEntries([...CHOICES, TIE].map(c => [c.key, c]));
+const lower = k => CK[k].label.toLowerCase();
+// The set seats: one vote each per lot. Residents vote by name.
+const ROLES = [
+  { key: "cdc", label: "CDC" },
+  { key: "council", label: "Councilperson" },
+  { key: "planner", label: "Neighborhood planner" },
+  { key: "nim", label: "Neighborhood investment manager" }
+];
+const RK = Object.fromEntries(ROLES.map(r => [r.key, r]));
+
+/* ---------------------------------------------------------------- helpers */
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const fmt = n => new Intl.NumberFormat().format(n);
+const normId = v => String(v ?? "").replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+const displayId = id => /^\d{8}$/.test(id) ? `${id.slice(0, 3)}-${id.slice(3, 5)}-${id.slice(5)}` : id;
+const cleanName = v => String(v ?? "").replace(/\s+/g, " ").trim().slice(0, 40);
+const ls = {
+  get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch { return false; } }
+};
+const isWide = () => matchMedia("(min-width: 900px)").matches;
+const calm = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
+let toastTimer = 0;
+function toast(text, ms = 4500) {
+  const el = $("#toast"); el.textContent = text;
+  el.classList.add("show"); clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove("show"), ms);
+}
+let pillTimer = 0;
+function pill(text, ms = 1800) {
+  const el = $("[data-zhint]"); el.textContent = text; el.classList.add("show");
+  clearTimeout(pillTimer); pillTimer = setTimeout(() => el.classList.remove("show"), ms);
+}
+const ICON = {
+  about: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 11v5.5"/><path d="M12 7.6v.2"/></svg>`,
+  close: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>`,
+  person: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="8.5" r="3.6"/><path d="M5 20c.8-3.7 3.6-5.8 7-5.8s6.2 2.1 7 5.8"/></svg>`,
+  down: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>`
+};
+
+/* ------------------------------------------------- the record (this browser)
+   votes: parcel -> voter -> { role, name, choice, at }. A voter is a seat ("cdc") or a resident ("r:dana r."). */
+const STORE_KEY = "plvt-demo:v1";
+let D = { votes: {}, me: null, names: [], seen: false };
+function validMe(m) {
+  if (!m || typeof m !== "object") return null;
+  if (RK[m.role]) return { role: m.role };
+  if (m.role === "resident" && cleanName(m.name)) return { role: "resident", name: cleanName(m.name) };
+  return null;
+}
+function loadStore() {
+  const d = ls.get(STORE_KEY) || {};
+  const votes = {};
+  for (const [pid, lot] of Object.entries(d.votes && typeof d.votes === "object" ? d.votes : {})) {
+    for (const [k, v] of Object.entries(lot || {})) if (v && CK[v.choice] && v.choice !== "tie") (votes[pid] ||= {})[k] = v;
+  }
+  D = { votes, me: validMe(d.me), names: Array.isArray(d.names) ? d.names.map(cleanName).filter(Boolean).slice(0, 8) : [], seen: !!d.seen };
+}
+function saveStore() {
+  if (!ls.set(STORE_KEY, D)) toast("This browser isn't saving. Votes will be gone when the page closes.");
+}
+const voterKey = m => m.role === "resident" ? `r:${m.name.toLowerCase()}` : m.role;
+const meLabel = m => m.role === "resident" ? m.name : RK[m.role].label;
+const myChoice = id => D.me && id ? D.votes[id]?.[voterKey(D.me)]?.choice ?? null : null;
+const entries = id => Object.entries(D.votes[id] || {}).map(([k, v]) => ({ k, ...v }));
+// Each person counts once. Lead: the choice with the most votes, "tie" when two share the top.
+function summary(id) {
+  const es = entries(id), counts = Object.fromEntries(CHOICES.map(c => [c.key, 0]));
+  for (const e of es) counts[e.choice]++;
+  const total = es.length, max = Math.max(...Object.values(counts));
+  const top = CHOICES.filter(c => max > 0 && counts[c.key] === max);
+  return { es, counts, total, max, lead: !total ? null : top.length > 1 ? "tie" : top[0].key, agree: total > 0 && max === total };
+}
+// The lot on the map: solid when everyone agrees, hatched when they don't (grey when tied).
+function lookOf(id) {
+  const s = summary(id); if (!s.total) return null;
+  return { st: s.agree ? "s" : "h", c: s.lead };
+}
+
+/* ------------------------------------------------------- the city's lots */
+const PARCEL_FORMAT = 1;
+const idb = {
+  open() { return new Promise((ok, no) => { const r = indexedDB.open("plvt-demo", 1); r.onupgradeneeded = () => r.result.createObjectStore("kv"); r.onsuccess = () => ok(r.result); r.onerror = () => no(r.error); }); },
+  async get(k) { try { const d = await this.open(); return await new Promise((ok, no) => { const q = d.transaction("kv").objectStore("kv").get(k); q.onsuccess = () => ok(q.result); q.onerror = () => no(q.error); }); } catch { return null; } },
+  async set(k, v) { try { const d = await this.open(); await new Promise((ok, no) => { const t = d.transaction("kv", "readwrite"); t.objectStore("kv").put(v, k); t.oncomplete = ok; t.onerror = () => no(t.error); }); } catch {} }
+};
+async function getJson(url) {
+  const res = await fetch(url); if (!res.ok) throw new Error(`The city's service answered ${res.status}`);
+  const d = await res.json(); if (d && d.error) throw new Error(d.error.message || "The city's service returned an error");
+  return d;
+}
+async function loadParcels() {
+  const L = CONFIG.parcelsUrl.replace(/\/+$/, "");
+  const [meta, { count }] = await Promise.all([getJson(`${L}?f=json`), getJson(`${L}/query?where=1%3D1&returnCountOnly=true&f=json`)]);
+  const edited = meta.editingInfo?.dataLastEditDate || meta.editingInfo?.lastEditDate || null;
+  const key = `v${PARCEL_FORMAT}|${L}|${edited}|${count}`;
+  const hit = await idb.get("parcels");
+  if (hit && hit.key === key) return hit.fc;
+  const oid = meta.objectIdField || "OBJECTID";
+  const fields = (meta.fields || []).filter(f => f.name !== oid && f.type !== "esriFieldTypeGeometry" && !/^shape/i.test(f.name)).map(f => ({ name: f.name, alias: f.alias || f.name }));
+  const size = Math.min(meta.maxRecordCount || 1000, 2000), offsets = [];
+  for (let o = 0; o < count; o += size) offsets.push(o);
+  const q = o => new URLSearchParams({ where: "1=1", outFields: "*", outSR: "4326", geometryPrecision: "6", orderByFields: oid, resultOffset: o, resultRecordCount: size, f: "geojson" });
+  const pages = await Promise.all(offsets.map(o => getJson(`${L}/query?${q(o)}`)));
+  const raw = pages.flatMap(p => p.features || []);
+  if (raw.length < count) throw new Error(`only ${fmt(raw.length)} of ${fmt(count)} lots came back`);
+  const fc = buildParcels(raw, oid);
+  fc.metadata = { edited, count: fc.features.length, fields: fields.length ? fields : Object.keys(raw[0]?.properties || {}).filter(k => k !== oid).map(n => ({ name: n, alias: n })) };
+  idb.set("parcels", { key, fc });
+  return fc;
+}
+// City records -> what the map needs: id, label, center point, plus the city's own fields for the card.
+function buildParcels(raw, oid) {
+  const items = [], seen = new Set();
+  for (const f of raw) {
+    const g = f.geometry; if (!g || (g.type !== "Polygon" && g.type !== "MultiPolygon")) continue;
+    const p = f.properties || {}, id = normId(p[CONFIG.idField]); if (!id || seen.has(id)) continue;
+    seen.add(id);
+    const [cx, cy] = centroid(g), city = { ...p }; delete city[oid];
+    items.push({ addr: parseAddress(p[CONFIG.addressField]), f: { type: "Feature", geometry: g, properties: { id, d: displayId(String(p[CONFIG.idField]).trim()), a: "", cx: +cx.toFixed(6), cy: +cy.toFixed(6), city } } });
+  }
+  // Lots without a street number get a label from the nearest lot that has one.
+  const cell = 0.002, grid = new Map(), gk = (x, y) => `${Math.floor(x / cell)},${Math.floor(y / cell)}`;
+  for (const it of items) if (it.addr?.full) { const k = gk(it.f.properties.cx, it.f.properties.cy); grid.has(k) ? grid.get(k).push(it) : grid.set(k, [it]); }
+  for (const it of items) {
+    const P = it.f.properties, a = it.addr;
+    if (a?.full) { P.a = a.full; continue; }
+    if (a?.street) { P.a = `Lot on ${a.street}`; continue; }
+    const kx = Math.cos(P.cy * Math.PI / 180), gx = Math.floor(P.cx / cell), gy = Math.floor(P.cy / cell);
+    let best = null, bd = Infinity;
+    for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) for (const b of grid.get(`${gx + dx},${gy + dy}`) || []) {
+      const q = b.f.properties, d = ((q.cx - P.cx) * kx) ** 2 + (q.cy - P.cy) ** 2; if (d < bd) { bd = d; best = b; }
+    }
+    const meters = best ? Math.sqrt(bd) * 111320 : Infinity;
+    P.a = meters < 400 ? `${meters < 60 ? "Next to" : "Near"} ${best.addr.full}` : `Parcel ${P.d}`;
+  }
+  return { type: "FeatureCollection", features: items.map(it => it.f) };
+}
+function titleCase(s) {
+  return String(s).toLowerCase().split(/\s+/).filter(Boolean).map(w =>
+    /^\d+(st|nd|rd|th)$/.test(w) ? w : /^\d/.test(w) || /^(n|s|e|w|ne|nw|se|sw)$/.test(w) ? w.toUpperCase()
+    : w.replace(/(^|['-])([a-z])/g, (_, x, y) => x + y.toUpperCase()).replace(/^Mc([a-z])/, (_, y) => "Mc" + y.toUpperCase())).join(" ");
+}
+function parseAddress(raw) {
+  const s = String(raw ?? "").split(",")[0].replace(/\s+/g, " ").trim();
+  if (!s || /^(null|none|n\/a|0)$/i.test(s)) return null;
+  const m = s.match(/^(\d+[A-Za-z]?(?:-\d+[A-Za-z]?)?)\s+(.+)$/);
+  if (m) return /^0+$/.test(m[1]) ? { street: titleCase(m[2]) } : { full: titleCase(`${m[1]} ${m[2]}`), street: titleCase(m[2]) };
+  if (/\d/.test(s) && !/[A-Za-z]{2,}/.test(s)) return null;
+  return { street: titleCase(s) };
+}
+function centroid(g) {
+  let x = 0, y = 0, n = 0;
+  for (const r of g.type === "Polygon" ? [g.coordinates[0]] : g.coordinates.map(p => p[0])) for (let i = 0; i < r.length - 1; i++) { x += r[i][0]; y += r[i][1]; n++; }
+  return n ? [x / n, y / n] : [0, 0];
+}
+
+/* ------------------------------------------------------------------ state */
+const S = { fc: null, byId: new Map(), fields: [], bounds: null, sel: null, sheet: null, page: null, pending: null };
+let gl = null;
+
+/* -------------------------------------------------------------------- map */
+function hatchImage(color) {
+  const n = 16, c = document.createElement("canvas"); c.width = c.height = n;
+  const x = c.getContext("2d");
+  x.fillStyle = "rgba(255,255,255,0.55)"; x.fillRect(0, 0, n, n);
+  x.strokeStyle = color; x.lineWidth = 3.2; x.lineCap = "square";
+  for (const o of [-n, 0, n]) { x.beginPath(); x.moveTo(o, n); x.lineTo(o + n, 0); x.stroke(); }
+  return { width: n, height: n, data: new Uint8Array(x.getImageData(0, 0, n, n).data.buffer) };
+}
+async function loadLabels() {
+  const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 8000);
+  try { const r = await fetch(CONFIG.labels, { signal: ctl.signal }); if (!r.ok) return null; const s = await r.json(); return s && s.version === 8 && Array.isArray(s.layers) ? s : null; }
+  catch { return null; } finally { clearTimeout(t); }
+}
+const EMPTY = { type: "FeatureCollection", features: [] };
+async function initMap() {
+  const lab = await loadLabels();
+  const sel = ["boolean", ["feature-state", "s"], false];
+  const colorOf = ["match", ["get", "c"], ...CHOICES.flatMap(c => [c.key, c.color]), TIE.color];
+  const W = (a, b, c) => ["interpolate", ["linear"], ["zoom"], 12, a, 15, b, 18, c];
+  const fade = { "circle-opacity": ["interpolate", ["linear"], ["zoom"], 13.6, 1, 14.6, 0], "circle-stroke-opacity": ["interpolate", ["linear"], ["zoom"], 13.6, 1, 14.6, 0] };
+  const style = { version: 8, sources: {
+      photo: { type: "raster", tiles: [CONFIG.imagery], tileSize: 256, maxzoom: 19, attribution: CONFIG.imageryAttribution },
+      parcels: { type: "geojson", data: S.fc, promoteId: "id", tolerance: 0.2 },
+      pts: { type: "geojson", data: { type: "FeatureCollection", features: S.fc.features.map(f => ({ type: "Feature", properties: { id: f.properties.id }, geometry: { type: "Point", coordinates: [f.properties.cx, f.properties.cy] } })) } },
+      voted: { type: "geojson", data: EMPTY, tolerance: 0.2 },
+      vpts: { type: "geojson", data: EMPTY }
+    }, layers: [
+      { id: "paper", type: "background", paint: { "background-color": "#FFFFFF" } },
+      { id: "photo", type: "raster", source: "photo", paint: { "raster-opacity": CONFIG.imageryOpacity, "raster-saturation": -0.3 } },
+      { id: "lots-fill", type: "fill", source: "parcels", paint: { "fill-color": "#FFFFFF", "fill-opacity": 0.2 } },
+      // one dark outline per lot (no white inner line): fainter and thinner zoomed out, firmer up close
+      { id: "lots-line", type: "line", source: "parcels", paint: { "line-color": "#2E2B36",
+          "line-opacity": ["interpolate", ["linear"], ["zoom"], 12, 0.35, 15, 0.7, 18, 0.8], "line-width": W(0.4, 0.9, 1.5) } },
+      { id: "v-solid", type: "fill", source: "voted", filter: ["==", ["get", "st"], "s"], paint: { "fill-color": colorOf, "fill-opacity": 0.88 } },
+      { id: "v-hatch", type: "fill", source: "voted", filter: ["==", ["get", "st"], "h"], paint: { "fill-pattern": ["concat", "h-", ["get", "c"]] } },
+      { id: "v-edge", type: "line", source: "voted", paint: { "line-color": colorOf, "line-width": W(0.8, 1.6, 2.6) } },
+      // zoomed out, lots are dots: filled = everyone agrees, ring = they don't
+      { id: "dots", type: "circle", source: "pts", maxzoom: 15, paint: { ...fade,
+          "circle-color": "#FFFFFF", "circle-radius": ["interpolate", ["linear"], ["zoom"], 10, 1.5, 14, 2.6], "circle-stroke-color": "#3E3B45", "circle-stroke-width": 0.7,
+          "circle-opacity": ["interpolate", ["linear"], ["zoom"], 13.6, 0.9, 14.6, 0] } },
+      { id: "vdots", type: "circle", source: "vpts", maxzoom: 15, paint: { ...fade,
+          "circle-color": ["case", ["==", ["get", "st"], "s"], colorOf, "#FFFFFF"], "circle-radius": ["interpolate", ["linear"], ["zoom"], 10, 3, 14, 4.8],
+          "circle-stroke-color": ["case", ["==", ["get", "st"], "s"], "#FFFFFF", colorOf], "circle-stroke-width": ["case", ["==", ["get", "st"], "s"], 1, 2] } },
+      { id: "sel-halo", type: "line", source: "parcels", paint: { "line-color": "#FFFFFF", "line-opacity": ["case", sel, 1, 0], "line-width": W(4, 6.5, 8) } },
+      { id: "sel-line", type: "line", source: "parcels", paint: { "line-color": "#D6336C", "line-opacity": ["case", sel, 1, 0], "line-width": W(2, 3.5, 4.5) } }
+    ] };
+  if (lab) {   // only the street names from the vector basemap, on top, so the photo stays readable
+    for (const [k, v] of Object.entries(lab.sources || {})) style.sources[k] = v;
+    style.glyphs = lab.glyphs; style.sprite = lab.sprite;
+    style.layers.push(...lab.layers.filter(l => l.type === "symbol"));
+  }
+  gl = new maplibregl.Map({ container: "map", style, bounds: S.bounds, fitBoundsOptions: { padding: 30 }, attributionControl: false,
+    dragRotate: false, pitchWithRotate: false, maxZoom: 19.5 });
+  gl.addControl(new maplibregl.AttributionControl({ compact: true }), "top-left");
+  const fold = () => $(".maplibregl-ctrl-attrib")?.classList.remove("maplibregl-compact-show");
+  gl.once("load", fold); gl.once("idle", fold); setTimeout(fold, 2500);
+  gl.touchZoomRotate.disableRotation();
+  gl.on("error", e => console.warn("Map:", e.error?.message || e));
+  gl.on("styleimagemissing", e => { const m = /^h-(.+)$/.exec(e.id); if (m && CK[m[1]] && !gl.hasImage(e.id)) gl.addImage(e.id, hatchImage(CK[m[1]].color), { pixelRatio: 2 }); });
+  gl.on("click", e => {
+    const exact = gl.queryRenderedFeatures(e.point, { layers: ["lots-fill"] });
+    const f = exact.length ? exact : gl.queryRenderedFeatures([[e.point.x - 4, e.point.y - 4], [e.point.x + 4, e.point.y + 4]], { layers: ["lots-fill", "dots"] });
+    const hit = f.find(x => x.layer.id === "lots-fill") || f[0];
+    if (!hit) return select(null);
+    if (gl.getZoom() < CONFIG.selectZoom) {   // too far out to pick one lot: zoom in on the tap instead
+      select(null); gl.easeTo({ center: e.lngLat, zoom: CONFIG.selectZoom + 1.5, duration: calm() ? 0 : 500 });
+      return pill("Zoom in to pick a lot");
+    }
+    select(normId(hit.properties.id));
+  });
+  gl.on("mousemove", e => { const f = gl.queryRenderedFeatures(e.point, { layers: ["lots-fill", "dots"] }); gl.getCanvas().style.cursor = f.length && gl.getZoom() >= CONFIG.selectZoom ? "pointer" : ""; });
+  for (const c of [...CHOICES, TIE]) gl.addImage(`h-${c.key}`, hatchImage(c.color), { pixelRatio: 2 });
+  await new Promise(ok => { if (gl.isStyleLoaded()) return ok(); let done = false; const go = () => { if (!done) { done = true; ok(); } }; gl.once("load", go); gl.once("style.load", go); setTimeout(go, 8000); });
+}
+let paintKey = "";
+function paint() {
+  if (!gl || !gl.getSource("voted")) return;
+  const polys = [], pts = [];
+  for (const id of Object.keys(D.votes)) {
+    const f = S.byId.get(id), look = lookOf(id); if (!f || !look) continue;
+    const props = { id, st: look.st, c: look.c };
+    polys.push({ type: "Feature", properties: props, geometry: f.geometry });
+    pts.push({ type: "Feature", properties: props, geometry: { type: "Point", coordinates: [f.properties.cx, f.properties.cy] } });
+  }
+  const key = polys.map(f => `${f.properties.id}${f.properties.st}${f.properties.c}`).join("|");
+  if (key === paintKey) return;
+  paintKey = key;
+  gl.getSource("voted").setData({ type: "FeatureCollection", features: polys });
+  gl.getSource("vpts").setData({ type: "FeatureCollection", features: pts });
+}
+function select(id) {
+  if (S.sel === id) return;
+  if (S.sel && gl) gl.setFeatureState({ source: "parcels", id: S.sel }, { s: false });
+  S.sel = id;
+  if (id && gl) gl.setFeatureState({ source: "parcels", id }, { s: true });
+  if (id) { if (S.page) closePage(); if (S.sheet) closeSheet(); }
+  drawBar(); drawCard(true);
+  if (id) keepInView(id);
+}
+// Keep the selected lot in view: right of the card on wide screens, above the dock on phones.
+function keepInView(id) {
+  if (!gl) return;
+  const p = S.byId.get(id).properties, pt = gl.project([p.cx, p.cy]), Wd = innerWidth, H = innerHeight, wide = isWide();
+  const card = $("[data-card]"), dockTop = (wide || card.hidden ? $(".tray") : card).getBoundingClientRect().top;
+  const top = $("[data-tbar]").getBoundingClientRect().bottom + 16;
+  const r = { left: wide && !card.hidden ? card.getBoundingClientRect().right + 24 : 20, right: Wd - 20, top, bottom: dockTop - 16 };
+  if (pt.x > r.left && pt.x < r.right && pt.y > r.top && pt.y < r.bottom) return;
+  gl.easeTo({ center: [p.cx, p.cy], offset: [(r.left + r.right) / 2 - Wd / 2, (r.top + r.bottom) / 2 - H / 2], duration: calm() ? 0 : 350 });
+}
+
+/* ---------------------------------------------------------------- voting */
+function vote(choice) {
+  if (!S.sel) return pill("Pick a lot first");
+  if (!D.me) return openWho(choice);   // ask who's voting, then cast
+  const k = voterKey(D.me), lot = D.votes[S.sel] ||= {};
+  if (lot[k]?.choice === choice) delete lot[k];   // the same choice again takes it back
+  else lot[k] = { role: D.me.role, name: D.me.role === "resident" ? D.me.name : null, choice, at: Date.now() };
+  if (!Object.keys(lot).length) delete D.votes[S.sel];
+  saveStore(); paint(); drawBar(); drawCard();
+}
+function setMe(me) {
+  D.me = me;
+  if (me.role === "resident") D.names = [me.name, ...D.names.filter(n => n.toLowerCase() !== me.name.toLowerCase())].slice(0, 8);
+  saveStore();
+  const pending = S.pending; closeSheet();
+  drawWho(); drawBar(); drawCard();
+  if (pending && S.sel) vote(pending); else pill(`Voting as ${meLabel(me)}`);
+}
+
+/* ------------------------------------------------------------- the screen */
+function setDockH() { const d = $("[data-dock]"); if (d) document.documentElement.style.setProperty("--dock-h", `${d.offsetHeight}px`); }
+function drawBar() {
+  const bar = $("[data-bar]"), cur = myChoice(S.sel);
+  bar.classList.toggle("lit", !!S.sel);
+  bar.innerHTML = CHOICES.map((c, i) => `<button class="sq${cur === c.key ? " cur" : ""}" data-choice="${c.key}" style="--c:${c.color}"
+      aria-pressed="${cur === c.key}" aria-label="${esc(c.label)}${cur === c.key ? " (your vote; tap to take it back)" : ""}" title="${esc(c.label)} (${i + 1})">${esc(c.label).replace("Development", "Develop&shy;ment")}</button>`).join("");
+}
+function drawWho() {
+  const b = $("[data-who]");
+  b.classList.toggle("unset", !D.me);
+  b.innerHTML = D.me ? `${ICON.person}<span>Voting as</span><b>${esc(meLabel(D.me))}</b>${ICON.down}`
+    : `${ICON.person}<b>Choose who's voting</b>${ICON.down}`;
+  b.setAttribute("aria-expanded", String(S.sheet === "who"));
+  setDockH();
+}
+function leadHtml(s) {
+  if (!s.total) return `<div class="lead none">No one has weighed in on this lot yet.</div>`;
+  const c = CK[s.lead], sw = `<i class="sw${s.agree ? "" : " h"}" style="--c:${c.color}"></i>`;
+  if (s.lead === "tie") {
+    const parts = CHOICES.filter(x => s.counts[x.key]).map(x => `${s.counts[x.key]} ${lower(x.key)}`);
+    return `<div class="lead">${sw}<b>Split</b><span class="muted">${esc(parts.join(", "))}</span></div>`;
+  }
+  if (s.total === 1) return `<div class="lead">${sw}<b>${esc(c.label)}</b><span class="muted">1 vote so far</span></div>`;
+  if (s.agree) return `<div class="lead">${sw}<b>All ${s.total} say ${esc(lower(s.lead))}</b></div>`;
+  return `<div class="lead">${sw}<b>Leaning ${esc(lower(s.lead))}</b><span class="muted">${s.max} of ${s.total}</span></div>`;
+}
+function drawCard(fresh) {
+  const el = $("[data-card]");
+  if (!S.sel || ((S.page || S.sheet) && !isWide())) { el.hidden = true; setDockH(); return; }   // wide screens keep the lot showing beside them
+  const f = S.byId.get(S.sel), p = f.properties, s = summary(S.sel), lot = D.votes[S.sel] || {};
+  const meK = D.me ? voterKey(D.me) : null;
+  const open = !fresh && el.querySelector("details.cx")?.open;   // a newly selected lot starts with its city record folded
+  const val = v => v === null || v === undefined || String(v).trim() === "" ? null : typeof v === "number" ? fmt(v) : String(v);
+  // everyone's votes as one bar, grouped by choice
+  const stack = s.total ? `<div class="stack" aria-hidden="true">${CHOICES.flatMap(c => Array(s.counts[c.key]).fill(`<i style="--c:${c.color}"></i>`)).join("")}</div>` : "";
+  const seats = ROLES.map(r => {
+    const v = lot[r.key], c = v && CK[v.choice];
+    return `<li class="${meK === r.key ? "me" : ""}"><span>${esc(r.label)}${meK === r.key ? ` <span class="muted">(you)</span>` : ""}</span>
+      ${c ? `<span class="pick"><i class="sw" style="--c:${c.color}"></i>${esc(c.label)}</span>` : `<span class="pick none">No input yet</span>`}</li>`;
+  }).join("");
+  const seated = ROLES.filter(r => lot[r.key]).length;
+  const res = s.es.filter(e => e.role === "resident").sort((a, b) => a.at - b.at);
+  const rcount = Object.fromEntries(CHOICES.map(c => [c.key, res.filter(e => e.choice === c.key).length]));
+  const resHtml = res.length
+    ? `<div class="res">${res.map(e => `<span class="rc${e.k === meK ? " me" : ""}" title="${esc(CK[e.choice].label)}"><i class="sw" style="--c:${CK[e.choice].color}"></i>${esc(e.name)}</span>`).join("")}</div>
+       <div class="rsum">${esc(CHOICES.filter(c => rcount[c.key]).map(c => `${rcount[c.key]} ${lower(c.key)}`).join(", "))}</div>`
+    : `<div class="empty">No residents yet.</div>`;
+  el.innerHTML = `<div class="ch"><div class="ct"><b>${esc(p.a)}</b><div class="pin">Parcel ${esc(p.d)}</div></div>
+      <button class="nx" data-close aria-label="Close">${ICON.close}</button></div>
+    ${leadHtml(s)}${stack}
+    <div class="sec"><h3>Stakeholders<span>${seated} of ${ROLES.length}</span></h3><ul class="who">${seats}</ul></div>
+    <div class="sec"><h3>Residents<span>${res.length}</span></h3>${resHtml}</div>
+    <details class="cx"${open ? " open" : ""}><summary>City record</summary>
+      <dl class="city">${S.fields.map(fd => { const v = val(p.city[fd.name]); return `<dt>${esc(fd.alias)}</dt><dd class="${v === null ? "blank" : ""}">${v === null ? "Blank" : esc(v)}</dd>`; }).join("")}</dl></details>`;
+  if (fresh && el.hidden) { el.classList.remove("in"); void el.offsetWidth; el.classList.add("in"); }
+  el.hidden = false;
+  setDockH();
+}
+
+/* ------------------------------------------------------- who's voting */
+function openWho(pending = null) {
+  if (S.page) closePage();
+  S.sheet = "who"; S.pending = pending;
+  const el = $("[data-sheet]"), cur = D.me;
+  el.innerHTML = `<div class="wh"><p><b>Who's voting?</b><br><span class="muted">Each person gets one vote per lot. Switch any time.</span></p>
+      <button class="nx" data-close-sheet aria-label="Close">${ICON.close}</button></div>
+    <h4>Stakeholders</h4>
+    <div class="roles">${ROLES.map(r => `<button class="role" data-role="${r.key}" aria-pressed="${cur?.role === r.key}">${esc(r.label)}</button>`).join("")}</div>
+    <form class="rform" data-res-form autocomplete="off">
+      <h4><label for="rname">Resident</label></h4>
+      <div class="rrow"><input id="rname" name="n" maxlength="40" placeholder="Name" enterkeyhint="go" autocapitalize="words" spellcheck="false">
+        <button class="btn btn-dark btn-sm">Vote as resident</button></div>
+      <div class="msg" data-res-msg></div>
+      ${D.names.length ? `<div class="recent">${D.names.map(n => `<button type="button" class="chip" data-res="${esc(n)}" aria-pressed="${cur?.role === "resident" && cur.name.toLowerCase() === n.toLowerCase()}">${esc(n)}</button>`).join("")}</div>` : ""}
+    </form>`;
+  el.hidden = false;
+  drawWho(); drawCard();
+  (cur ? $(`[aria-pressed="true"]`, el) : $(".role", el))?.focus();
+}
+function closeSheet() {
+  S.sheet = null; S.pending = null;
+  const el = $("[data-sheet]"); el.hidden = true; el.innerHTML = "";
+  drawWho(); drawCard();
+}
+
+/* --------------------------------------------------------- How this works */
+let clearArmed = false;
+function openAbout() {
+  if (S.sheet) closeSheet();
+  S.page = "about"; clearArmed = false;
+  const lots = Object.keys(D.votes).length, votes = Object.values(D.votes).reduce((n, l) => n + Object.keys(l).length, 0);
+  const sw = (k, h) => `<i class="sw${h ? " h" : ""}" style="--c:${CK[k].color}"></i>`;
+  const el = $("[data-page]");
+  el.innerHTML = `<div class="top"><h1>One record for every lot</h1><button class="nx" data-close-page aria-label="Close">${ICON.close}</button></div>
+    <p>What should happen to a city-owned vacant lot? Today, each group answers in its own place, and the answers rarely meet.</p>
+    <dl class="paths">
+      <dt>City</dt><dd>Citywide planning frameworks, on the Open Data Portal</dd>
+      <dt>Council</dt><dd>Ward meetings, emails and phone calls, in notes and spreadsheets</dd>
+      <dt>CDCs</dt><dd>Neighborhood plans, on a CDC website</dd>
+      <dt>Residents</dt><dd>Block club meetings, in conversations and meeting notes</dd>
+    </dl>
+    <p>This puts every answer in one place, keyed to the parcel and open to everyone. The meetings still happen. What's decided in them lands here, next to the City's own record for the lot.</p>
+    <h2>Voting</h2>
+    <p>Tap a lot, choose who's voting, then pick open space, development or yard expansion. Tap your choice again to take it back. The CDC, the councilperson, the neighborhood planner and the neighborhood investment manager each have one vote per lot. Residents vote by name. Everyone counts once.</p>
+    <h2>On the map</h2>
+    <ul class="key">
+      <li><span class="sws">${CHOICES.map(c => sw(c.key)).join("")}</span>Everyone who weighed in agrees</li>
+      <li><span class="sws">${CHOICES.map(c => sw(c.key, true)).join("")}</span>Not everyone agrees; the color is the leading use</li>
+      <li><span class="sws">${sw("tie", true)}</span>Tied for the lead</li>
+    </ul>
+    <h2>This demo</h2>
+    <p>Votes are saved in this browser only. Nothing is sent anywhere. The lots and their city records come live from the City's land bank layer.</p>
+    <div class="acts"><button class="btn btn-sm${votes ? " btn-warn" : ""}" data-clear ${votes ? "" : "disabled"}>Clear all votes</button>
+      <span class="small">${votes ? `${fmt(votes)} vote${votes === 1 ? "" : "s"} on ${fmt(lots)} lot${lots === 1 ? "" : "s"}` : "No votes yet"}</span></div>`;
+  el.hidden = false; el.scrollTop = 0;
+  $("[data-about]").setAttribute("aria-expanded", "true");
+  if (!D.seen) { D.seen = true; saveStore(); }
+  drawCard();
+}
+function closePage() {
+  S.page = null; const el = $("[data-page]"); el.hidden = true; el.innerHTML = "";
+  $("[data-about]").setAttribute("aria-expanded", "false");
+  drawCard();
+}
+function clearAll(btn) {
+  if (!clearArmed) { clearArmed = true; btn.textContent = "Tap again to clear"; return; }
+  D.votes = {}; saveStore(); paint(); drawBar(); openAbout(); pill("All votes cleared");
+}
+
+/* ---------------------------------------------------------------- wiring */
+function wire() {
+  document.addEventListener("click", e => {
+    if (e.isTrusted && S.page && !e.target.closest?.("[data-page], [data-tbar]")) closePage();   // a tap elsewhere folds it away
+    const t = e.target.closest("button"); if (!t) return;
+    if (t.matches("[data-choice]")) return vote(t.dataset.choice);
+    if (t.matches("[data-close]")) return select(null);
+    if (t.matches("[data-who]")) return S.sheet === "who" ? closeSheet() : openWho();
+    if (t.matches("[data-close-sheet]")) return closeSheet();
+    if (t.matches("[data-role]")) return setMe({ role: t.dataset.role });
+    if (t.matches("[data-res]")) return setMe({ role: "resident", name: t.dataset.res });
+    if (t.matches("[data-about]")) return S.page ? closePage() : openAbout();
+    if (t.matches("[data-close-page]")) return closePage();
+    if (t.matches("[data-clear]")) return clearAll(t);
+  });
+  document.addEventListener("submit", e => {
+    e.preventDefault();
+    if (!e.target.matches("[data-res-form]")) return;
+    const name = cleanName(e.target.elements.n.value);
+    if (!name) { $("[data-res-msg]").textContent = "Type a name to vote as a resident."; return e.target.elements.n.focus(); }
+    setMe({ role: "resident", name });
+  });
+  document.addEventListener("keydown", e => {
+    if (e.target.matches("input, textarea") || e.metaKey || e.ctrlKey || e.altKey) { if (e.key === "Escape" && S.sheet) closeSheet(); return; }
+    if (e.key === "Escape") { if (S.page) return closePage(); if (S.sheet) return closeSheet(); if (S.sel) return select(null); }
+    if (!S.page && !S.sheet && /^[1-3]$/.test(e.key) && S.sel) vote(CHOICES[+e.key - 1].key);
+  });
+  // another tab of this demo changed the votes
+  addEventListener("storage", e => { if (e.key === STORE_KEY) { loadStore(); paint(); drawBar(); drawWho(); drawCard(); } });
+  addEventListener("resize", setDockH);
+}
+
+async function boot() {
+  loadStore();
+  wire();
+  let fc;
+  try { fc = await loadParcels(); }
+  catch (e) { $("[data-boot-msg]").textContent = `The city's lot list didn't load (${e.message}). Reload the page to try again.`; return; }
+  S.fc = fc; S.fields = fc.metadata.fields;
+  let x0 = 180, y0 = 90, x1 = -180, y1 = -90;
+  for (const f of fc.features) { const p = f.properties; S.byId.set(p.id, f); x0 = Math.min(x0, p.cx); y0 = Math.min(y0, p.cy); x1 = Math.max(x1, p.cx); y1 = Math.max(y1, p.cy); }
+  S.bounds = [[x0, y0], [x1, y1]];
+  await initMap();
+  $$("[data-icon]").forEach(b => { b.innerHTML = ICON[b.dataset.icon]; });
+  $("[data-boot]").hidden = true; $("[data-dock]").hidden = false; $("[data-tbar]").hidden = false;
+  drawBar(); drawWho(); paint();
+  if (!D.seen) openAbout();
+}
+boot();
+</script>
+</body>
+</html>
